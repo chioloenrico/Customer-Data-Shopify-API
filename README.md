@@ -112,6 +112,8 @@ You can adapt this implementation however you prefer, but below is an example of
 
 ````js
 analytics.subscribe("checkout_completed", async (event) => {
+  console.log("--- START DEBUG CHECKOUT COMPLETED ---");
+  console.log("Event received:", event);
 
   const baseDataLayerPayload = {
     event: "checkout_completed",
@@ -125,51 +127,74 @@ analytics.subscribe("checkout_completed", async (event) => {
 
   let customerApiData = {};
 
+  /* 1. CUSTOMER ID VALIDATION */
   const customerGid = event.data.checkout.order?.customer?.id;
   if (customerGid) {
-    console.log("STEP 1: Search Client ID", customerGid);
-    const customerId = customerGid.replace('gid://shopify/Customer/', '');
-    console.log("Client ID FIND:", customerId);
+    console.log("STEP 1: Customer ID found:", customerGid);
+    const customerId = customerGid.replace("gid://shopify/Customer/", "");
+    console.log("Extracted Customer ID:", customerId);
 
-    // 2. PREPARAZIONE DELLA CHIAMATA
-    const googleScriptUrl = 'https://script.google.com/macros/s/akfycbzrrrjAcUfBFW9NmifLCNUmf1gregregregB7LzbyBVsS2w7y8g5r7heQcLS3aIEC6Pvrd8hBB5Qfh4Kw/exec';
-    const secretApiKey = 'sfdfdfd'; // <-- USING THE SAME API KEY
+    /* 2. API CALL PREPARATION */
+    const googleScriptUrl =
+      "https://script.google.com/macros/s/AKfycbxcyh9CuY5V4iJbApC_yrb7xkzpc4ZDE4YSEN-cgbquBv-cxNSAgJNjf0DgGVaWrRGQ/exec";
+    const secretApiKey = "secret-key"; // << usa la tua chiave
 
-    const finalUrl = `${googleScriptUrl}?customerId=${customerId}&apiKey=${secretApiKey}`;
-    console.log("STEP 2: Final URL:", finalUrl);
+    const requestBody = {
+      customerId: customerId,
+      apiKey: secretApiKey
+    };
+    console.log("STEP 2: POST request body:", requestBody);
 
     try {
-      // 3. CALL EXECUTION
-      console.log("STEP 3: Start fetch...");
-      const response = await fetch(finalUrl);
-      console.log("Response receveid. Status:", response.status, response.statusText);
+      /* 3. EXECUTING THE API CALL */
+      console.log("STEP 3: Executing fetch call with POST...");
+      const response = await fetch(googleScriptUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "text/plain;charset=UTF-8" /* 👉 evita il pre-flight */
+        },
+        body: JSON.stringify(requestBody),
+        keepalive: true /* consigliato da Shopify */
+      });
+      console.log("Response received. Status:", response.status, response.statusText);
 
       if (response.ok) {
-        // 4. OK
+        /* 4. SUCCESS */
         const responseData = await response.json();
-        customerApiData = responseData; 
-        console.log("STEP 4: JSON Processed", customerApiData);
+        customerApiData = responseData;
+        console.log("STEP 4 (SUCCESS): JSON data received and processed:", customerApiData);
       } else {
-        // 4. ERROR
+        /* 4. FAILURE (NON-OK RESPONSE) */
         const errorText = await response.text();
-        console.error("STEP 4 (ERROR): response is not ok:", errorText);
+        console.error("STEP 4 (ERROR): Response was not OK. Error text:", errorText);
       }
     } catch (error) {
-      // 4. ERROR
-      console.error("PASSO 4 (NETWORK ERROR): Fetch Failed", error);
+      /* 4. FAILURE (NETWORK ERROR) */
+      console.error("STEP 4 (NETWORK ERROR): Fetch call failed.", error);
     }
   } else {
-      console.error("STEP 1 ERROR: Client doesn't exist");
+    console.error("STEP 1 (ERROR): Customer ID NOT found at event.data.checkout.order.customer.id");
   }
 
-  // 5. SEND TO DATALAYER
+  /* 5. PUSH TO DATALAYER */
   window.dataLayer.push({
     ...baseDataLayerPayload,
     customerApiData: customerApiData
   });
-  console.log("--- STOP DEBUG --- Data Send to DataLayer:", window.dataLayer[window.dataLayer.length - 1]);
+  console.log("--- END DEBUG --- Data sent to dataLayer:", window.dataLayer[window.dataLayer.length - 1]);
 });
-
+    
+    analytics.subscribe("payment_info_submitted", (event) => {
+      window.dataLayer.push({
+        event: "payment_info_submitted",
+        timestamp: event.timestamp,
+        id: event.id,
+        client_id: event.clientId,
+        data: event.data,
+        name: event.name,
+        context: event.context
+      });
+    });
 ````
 
 The two most important variables in this script are:
